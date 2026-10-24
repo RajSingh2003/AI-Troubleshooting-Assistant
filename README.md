@@ -10,15 +10,16 @@ A working prototype that helps support engineers investigate common technical is
 
 1. [Features](#1-features)
 2. [Setup](#2-setup)
-3. [Project structure](#3-project-structure)
-4. [Approach](#4-approach)
-5. [AI tools and models used](#5-ai-tools-and-models-used)
-6. [My contribution and use of AI coding tools](#6-my-contribution-and-use-of-ai-coding-tools)
-7. [Assumptions](#7-assumptions)
-8. [Testing](#8-testing)
-9. [Limitations](#9-limitations)
-10. [Possible next steps](#10-possible-next-steps)
-11. [Assignment requirements checklist](#11-assignment-requirements-checklist)
+3. [Screenshots](#3-screenshots)
+4. [Project structure](#4-project-structure)
+5. [Approach](#5-approach)
+6. [AI tools and models used](#6-ai-tools-and-models-used)
+7. [My contribution and use of AI coding tools](#7-my-contribution-and-use-of-ai-coding-tools)
+8. [Assumptions](#8-assumptions)
+9. [Testing](#9-testing)
+10. [Limitations](#10-limitations)
+11. [Possible next steps](#11-possible-next-steps)
+12. [Assignment requirements checklist](#12-assignment-requirements-checklist)
 
 ---
 
@@ -67,10 +68,46 @@ Open http://localhost:8501. You can also paste the key into the sidebar instead 
 
 ---
 
-## 3. Project structure
+## 3. Screenshots
+
+> Captured from the prototype running locally. All data shown is simulated.
+
+### 3.1 Home dashboard
+![Home dashboard](docs/screenshots/01-home-dashboard.png)
+
+*The start page. The top row shows the knowledge base size (**25 entries**), the mode (**Gemini + keywords**), the answer model (**gemini-3.5-flash-lite**) and the relevance threshold (**0.55**). The sidebar has the settings: Gemini API key (optional), offline mode, number of entries to retrieve (top-k) and relevance threshold. Example questions make the demo quick to start.*
+
+### 3.2 AI troubleshooting answer for a known issue
+![AI troubleshooting answer](docs/screenshots/02-ai-troubleshooting.png)
+
+*Query: "The payment API is returning a 500 error." The answer is marked **Answered from knowledge base**, **Confidence: high** and **AI answer**. A short summary names the likely causes (an unhandled exception after a deployment, an exhausted DB connection pool, or a failing bank gateway). Five ordered troubleshooting steps follow, each tagged with its source entry **`KB-001`**. Tabs give the resolution, escalation team, sources and retrieval details.*
+
+### 3.3 Source entry behind the answer
+![Knowledge base sources](docs/screenshots/03-knowledge-base-sources.png)
+
+*The **Sources** tab for the same answer opens the full entry it came from: **KB-001: Payment API returns HTTP 500 Internal Server Error**, retrieval score **0.83**, category Payments - API, severity **P1**, escalation team **Payments Backend (L3)**. The engineer can read the entry's symptoms, causes, diagnostic checks and resolution to check the answer.*
+
+### 3.4 Offline mode (no API key needed)
+![Offline mode](docs/screenshots/04-offline-mode.png)
+
+*With **Offline mode** on, the app still works without Gemini. Query: "POS terminal at the store says no network." Keyword search finds **KB-014: POS terminal offline / not connecting** and shows its diagnostic steps exactly as written in the KB, marked **KB lookup** with no AI rewording. The offline relevance threshold is 0.25.*
+
+### 3.5 Unknown issue handled safely
+![Unknown issue handling](docs/screenshots/05-unknown-issue-handling.png)
+
+*Query: "The office coffee machine is broken." Nothing in the knowledge base scores above the threshold, so the assistant **does not guess a fix**. It shows **Not covered by knowledge base**, says the KB has no matching guidance, and asks three clarifying questions (which system is affected, the exact error, how many users and since when). The engineer's reply is combined with the earlier message for the next search. (Captured in offline mode; in Gemini mode the same check also runs before the model is called, so no AI request is made.)*
+
+### 3.6 Knowledge base explorer
+![Knowledge base explorer](docs/screenshots/06-knowledge-base-explorer.png)
+
+*The **Knowledge base** tab lists all 25 entries ("Showing 25 of 25 entries · simulated data only"), with a category filter and a search box (for example "refund", "VPN", "504"). Engineers can read the source material directly, so the assistant is never a black box.*
+
+---
+
+## 4. Project structure
 
 ```
-troubleshooting/
+troubleshooting-assistent/
 ├── app.py                    # Streamlit UI (chat, sources, retrieval debug, KB browser)
 ├── src/
 │   ├── kb.py                 # KB loading, schema validation, text for search / prompt
@@ -83,6 +120,8 @@ troubleshooting/
 │   ├── test_assistant.py     # 13 unit tests (mock client, no key needed)
 │   ├── test_queries.json     # 30 evaluation queries (25 in-KB, 5 out-of-KB)
 │   └── evaluate.py           # Evaluation script
+├── docs/
+│   └── screenshots/          # 6 app screenshots used in this README
 ├── .streamlit/config.toml    # UI theme
 ├── requirements.txt
 └── README.md
@@ -90,9 +129,9 @@ troubleshooting/
 
 ---
 
-## 4. Approach
+## 5. Approach
 
-### 4.1 Problem understanding
+### 5.1 Problem understanding
 
 L1/L2 engineers spend a lot of time searching documentation for known symptoms, checks and fixes. An AI assistant can speed this up, but in support work **a confident wrong answer is worse than no answer**. An invented fix can cause an outage, a wrong escalation wastes another team's time, and a made-up "known resolution" damages trust in the tool.
 
@@ -108,7 +147,7 @@ So the main design goal was:
 | 4 | Gives practical, ordered steps and an escalation team | Fixed response schema with `steps`, `resolution`, `escalation_team`, `escalate_when` |
 | 5 | Easy to demo and run | Streamlit UI, offline mode without an API key |
 
-### 4.2 Solution overview
+### 5.2 Solution overview
 
 The assistant follows a **Retrieval-Augmented Generation (RAG)** pattern with two safety gates:
 
@@ -150,7 +189,7 @@ Each answer has one of three statuses:
 | `need_more_info` | An entry may match, but key details are missing. The assistant asks 1–3 clarifying questions. |
 | `insufficient` | The KB does not cover the issue. No fix is suggested. |
 
-### 4.3 Knowledge base design
+### 5.3 Knowledge base design
 
 `kb/knowledge_base.json` has **25 entries** in four areas of a payments / fintech support desk:
 
@@ -169,7 +208,7 @@ Each answer has one of three statuses:
   - *Context text* (the full entry, including checks, resolution and escalation) is what the model receives as grounding.
 - **Adding an entry:** add an object with a new `id` to the JSON. On the next start, only new or changed entries are re-embedded; the rest come from the cache in `data/embeddings.json`.
 
-### 4.4 Hybrid retrieval
+### 5.4 Hybrid retrieval
 
 | Method | Good at | Weak at |
 |---|---|---|
@@ -187,7 +226,7 @@ score = 0.7 × cosine_similarity(query, entry) + 0.3 × keyword_score(query, ent
 - **Embedding cache:** entry embeddings are saved with a content hash, so startup is fast and API usage stays low.
 - **Offline fallback:** without an API key, retrieval is keyword-only with its own threshold (0.25), so the demo never depends on the network.
 
-### 4.5 Gate 1: relevance threshold (before the model)
+### 5.5 Gate 1: relevance threshold (before the model)
 
 If the best retrieval score is below the threshold (0.55 in hybrid mode), **the model is not called at all**. The assistant replies that the KB does not cover the issue and asks clarifying questions (which system, what error, how many users affected).
 
@@ -197,7 +236,7 @@ If the best retrieval score is below the threshold (0.55 in hybrid mode), **the 
 
 **How 0.55 was chosen:** in the evaluation set, in-KB queries scored 0.70–0.90 and out-of-KB queries 0.38–0.44 with Gemini embeddings. 0.55 sits in the gap. The earlier value (0.35) let off-topic queries through; raising it moved retrieval accuracy from 25/30 to 30/30. The threshold can be adjusted with a sidebar slider.
 
-### 4.6 Prompt engineering
+### 5.6 Prompt engineering
 
 The system prompt (`src/assistant.py`) is short and rule-based. Each rule targets a specific failure:
 
@@ -219,7 +258,7 @@ Other prompt choices:
 - **Follow-ups:** when the assistant asked for more information, the next message is combined with the earlier one for retrieval ("payment API failing" + "it's a 500" becomes one query).
 - **Model settings:** reasoning effort `low` and default temperature. A low temperature (0.1) made answers take about 120 s with this model family; the current settings take about 1.5 s. Grounding is enforced by code, not by temperature, so this trade-off is safe.
 
-### 4.7 Gate 2: validation in code (after the model)
+### 5.7 Gate 2: validation in code (after the model)
 
 The model's output is treated as **untrusted** until it passes these checks (`_validate()` in `src/assistant.py`):
 
@@ -232,7 +271,7 @@ The model's output is treated as **untrusted** until it passes these checks (`_v
 
 Every intervention is shown in the UI with a 🛡️ note, so engineers can see when and why the guardrails acted.
 
-### 4.8 Handling unknown and ambiguous issues
+### 5.8 Handling unknown and ambiguous issues
 
 | Situation | Behaviour |
 |---|---|
@@ -242,7 +281,7 @@ Every intervention is shown in the UI with a 🛡️ note, so engineers can see 
 | Model cites sources it was not given | Citations removed; answer downgraded if nothing valid remains |
 | User replies to a clarifying question | Previous and new messages are merged for retrieval |
 
-### 4.9 Worked example
+### 5.9 Worked example
 
 **Input:** "The payment API is returning a 500 error."
 
@@ -255,7 +294,7 @@ Every intervention is shown in the UI with a 🛡️ note, so engineers can see 
 
 **Counter-example:** "Kafka consumer lag is increasing on the orders topic" → the top score is far below the threshold → **"Not covered by the knowledge base"** with clarifying questions. No fix is suggested and the model is not called.
 
-### 4.10 Trade-offs
+### 5.10 Trade-offs
 
 | Decision | Benefit | Cost |
 |---|---|---|
@@ -268,7 +307,7 @@ Every intervention is shown in the UI with a 🛡️ note, so engineers can see 
 
 ---
 
-## 5. AI tools and models used
+## 6. AI tools and models used
 
 | Purpose | Model / tool |
 |---|---|
@@ -276,11 +315,11 @@ Every intervention is shown in the UI with a 🛡️ note, so engineers can see 
 | Answer generation | Google `gemini-3.5-flash-lite`, reasoning effort `low` (change with `GEMINI_CHAT_MODEL` / `GEMINI_REASONING_EFFORT`) |
 | API client | `openai` Python SDK pointed at Gemini's OpenAI-compatible endpoint |
 | UI | Streamlit |
-| AI coding assistant | Claude Code (see section 6) |
+| AI coding assistant | Claude Code (see section 7) |
 
 ---
 
-## 6. My contribution and use of AI coding tools
+## 7. My contribution and use of AI coding tools
 
 **Initial prototype (my own work).** I designed and wrote the first version myself: the 25-entry knowledge base and its schema, the hybrid retriever (embeddings + keyword scoring with an embedding cache), the two-gate design (score threshold before the model call, citation/escalation validation after it), the Streamlit UI, the unit tests with a mock client, and the 30-query evaluation set including deliberate out-of-KB questions. AI coding tools were not used for this version.
 
@@ -299,7 +338,7 @@ My decisions: which provider to use, accepting the faster/lighter model as the s
 
 ---
 
-## 7. Assumptions
+## 8. Assumptions
 
 - The users are support engineers, so answers are technical and short.
 - The KB is small (about 25 entries), so search runs in memory with no vector database.
@@ -308,7 +347,7 @@ My decisions: which provider to use, accepting the faster/lighter model as the s
 
 ---
 
-## 8. Testing
+## 9. Testing
 
 ```bash
 pytest -q                                   # unit tests (mock client, no key needed)
@@ -342,7 +381,7 @@ The free tier allows 15 answer requests per minute, so the full run may pause or
 
 ---
 
-## 9. Limitations
+## 10. Limitations
 
 - **Threshold tuning:** the default hybrid threshold (0.55) was tuned on the 30-query evaluation set. Adjust it with the sidebar slider if valid queries are rejected or unrelated ones get through.
 - **Evaluation bias:** the same person wrote the KB and the evaluation queries, so real users will word things in ways that score lower.
@@ -355,7 +394,7 @@ The free tier allows 15 answer requests per minute, so the full run may pause or
 
 ---
 
-## 10. Possible next steps
+## 11. Possible next steps
 
 - **KB management:** owners, review dates and versioning for entries, with stale entries flagged.
 - **Feedback loop:** record helpful / not helpful for each answer, and use `insufficient` queries to decide which KB entries to write next.
@@ -367,15 +406,16 @@ The free tier allows 15 answer requests per minute, so the full run may pause or
 
 ---
 
-## 11. Assignment requirements checklist
+## 12. Assignment requirements checklist
 
 | Requirement | Where it is met |
 |---|---|
-| Sample KB with issues, symptoms, checks and resolutions | `kb/knowledge_base.json` (25 entries), section 4.3 |
+| Sample KB with issues, symptoms, checks and resolutions | `kb/knowledge_base.json` (25 entries), section 5.3 |
 | Chat/search interface in plain language | `app.py` (Streamlit chat) |
-| Retrieve relevant entries and use AI to write the response | `src/retriever.py`, `src/assistant.py`, sections 4.4 and 4.6 |
+| Retrieve relevant entries and use AI to write the response | `src/retriever.py`, `src/assistant.py`, sections 5.4 and 5.6 |
 | Step-by-step checks and likely escalation team | Steps, Resolution and Escalation tabs in the UI |
 | Show the KB entry or source used | `[KB-xxx]` tag on every step, plus the Sources tab |
-| Handle unknown issues responsibly | Gate 1, `need_more_info` / `insufficient` statuses, Gate 2 (sections 4.5, 4.7, 4.8) |
+| Handle unknown issues responsibly | Gate 1, `need_more_info` / `insufficient` statuses, Gate 2 (sections 5.5, 5.7, 5.8) |
 | Source code and setup instructions | This repository, section 2 |
-| README: approach, AI tools/models, assumptions, testing, limitations | Sections 4, 5, 7, 8 and 9 |
+| Working prototype / demonstration | Section 3 (screenshots), plus a live demo |
+| README: approach, AI tools/models, assumptions, testing, limitations | Sections 5, 6, 8, 9 and 10 |
