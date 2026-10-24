@@ -1,0 +1,656 @@
+{
+  "meta": {
+    "name": "Sample L1/L2 Support Knowledge Base",
+    "version": "1.0",
+    "last_updated": "2026-10-23",
+    "note": "Simulated data for an internship assignment. Systems, services, teams and codes are fictional or generic. Not taken from any production environment."
+  },
+  "entries": [
+    {
+      "id": "KB-001",
+      "title": "Payment API returns HTTP 500 Internal Server Error",
+      "category": "Payments - API",
+      "symptoms": [
+        "POST /v1/payments returns 500 Internal Server Error",
+        "Sudden spike in failed transactions on merchant dashboard",
+        "Error message: 'Something went wrong, please retry'"
+      ],
+      "keywords": ["500", "internal server error", "payment api", "payment failed", "transaction failed", "server error"],
+      "possible_causes": [
+        "Unhandled exception in payment-service after a recent deployment",
+        "Database connection pool exhausted",
+        "Downstream acquirer/bank gateway failing and error not handled"
+      ],
+      "diagnostic_checks": [
+        "Check payment-service application logs for stack traces around the failure time (filter by request/trace ID)",
+        "Check whether a deployment happened in the last 24 hours (release/CI-CD history)",
+        "Check DB connection pool metrics (active vs max connections) on the monitoring dashboard",
+        "Check health/status of downstream acquirer and bank gateway integrations",
+        "Confirm whether failures affect all merchants or only one merchant/payment method"
+      ],
+      "known_resolution": "If a recent deployment introduced the error, roll back to the previous stable version. If the DB pool is exhausted, follow KB-012. If a downstream gateway is failing, enable failover routing to the secondary acquirer if available and notify the gateway partner.",
+      "escalation_team": "Payments Backend (L3)",
+      "severity": "P1",
+      "related": ["KB-002", "KB-012"]
+    },
+    {
+      "id": "KB-002",
+      "title": "Payment API timeouts (HTTP 502 / 504 Gateway Timeout)",
+      "category": "Payments - API",
+      "symptoms": [
+        "Requests to payment API return 502 Bad Gateway or 504 Gateway Timeout",
+        "Merchants report payment page keeps loading and then fails",
+        "API latency p95/p99 is much higher than normal"
+      ],
+      "keywords": ["502", "504", "timeout", "gateway timeout", "bad gateway", "slow", "latency"],
+      "possible_causes": [
+        "Upstream service (bank/acquirer) responding slowly",
+        "Load balancer cannot reach healthy backend instances",
+        "Backend pods overloaded (high CPU/memory) or crash-looping"
+      ],
+      "diagnostic_checks": [
+        "Check load balancer target health: are backend instances marked healthy?",
+        "Check pod/instance CPU, memory and restart counts",
+        "Compare latency of internal service vs upstream bank calls in APM traces",
+        "Check whether traffic volume is unusually high (sale event, retry storm)",
+        "Check the status page of upstream bank/acquirer partners"
+      ],
+      "known_resolution": "Scale out backend instances if overloaded. Restart crash-looping pods after capturing logs. If an upstream bank is slow, apply the circuit breaker / route to alternate acquirer. Ask merchants to use idempotency keys when retrying to avoid duplicate charges.",
+      "escalation_team": "Payments Backend (L3) / Platform SRE",
+      "severity": "P1",
+      "related": ["KB-001", "KB-020"]
+    },
+    {
+      "id": "KB-003",
+      "title": "API requests fail with 401 Unauthorized / invalid API key",
+      "category": "Payments - API",
+      "symptoms": [
+        "Merchant integration receives 401 Unauthorized",
+        "Error: 'Invalid API key' or 'Authentication failed'",
+        "Integration worked before and suddenly stopped"
+      ],
+      "keywords": ["401", "unauthorized", "invalid api key", "authentication failed", "api key", "credentials"],
+      "possible_causes": [
+        "Merchant is using test (sandbox) keys against production or vice versa",
+        "API key was rotated or revoked",
+        "Authorization header formatted incorrectly"
+      ],
+      "diagnostic_checks": [
+        "Confirm the environment: sandbox key prefix vs live key prefix matches the endpoint URL",
+        "Check in the merchant admin panel whether the key is active, rotated or revoked",
+        "Ask merchant for a sample request (with key masked) to verify the Authorization header format",
+        "Check if the merchant account is suspended or KYC is pending"
+      ],
+      "known_resolution": "Ask the merchant to use the correct environment key, or generate a new key from the dashboard if it was revoked. Never ask the merchant to share the full key over chat or email.",
+      "escalation_team": "Merchant Integration Support (L2)",
+      "severity": "P3",
+      "related": ["KB-004"]
+    },
+    {
+      "id": "KB-004",
+      "title": "API requests rejected with 429 Too Many Requests",
+      "category": "Payments - API",
+      "symptoms": [
+        "Merchant receives HTTP 429 Too Many Requests",
+        "Error: 'Rate limit exceeded'",
+        "Happens during peak hours or bulk operations"
+      ],
+      "keywords": ["429", "rate limit", "too many requests", "throttled", "throttling"],
+      "possible_causes": [
+        "Merchant exceeding their configured requests-per-second limit",
+        "Retry loop in merchant code without backoff",
+        "Bulk status polling instead of using webhooks"
+      ],
+      "diagnostic_checks": [
+        "Check the merchant's request rate in the API gateway dashboard vs their configured limit",
+        "Look for repeated identical requests indicating a retry loop",
+        "Check whether the merchant is polling payment status instead of consuming webhooks"
+      ],
+      "known_resolution": "Advise exponential backoff on retries and webhook usage for status updates. If the merchant has a genuine business need, raise a rate-limit increase request.",
+      "escalation_team": "Merchant Integration Support (L2)",
+      "severity": "P3",
+      "related": ["KB-003", "KB-009"]
+    },
+    {
+      "id": "KB-005",
+      "title": "UPI transaction stuck in PENDING state",
+      "category": "Payments - UPI",
+      "symptoms": [
+        "Customer paid via UPI but status shows PENDING",
+        "Amount debited from customer but merchant has not received confirmation",
+        "Order not confirmed after UPI payment"
+      ],
+      "keywords": ["upi", "pending", "stuck", "debited", "not confirmed", "upi pending", "collect request"],
+      "possible_causes": [
+        "Delayed response from the customer's bank or UPI switch",
+        "Callback/webhook from the UPI partner not received",
+        "Network timeout between payment service and UPI partner"
+      ],
+      "diagnostic_checks": [
+        "Look up the transaction by transaction ID / RRN in the admin console and check its latest status",
+        "Check whether the status-check (reconciliation) job has run for this transaction",
+        "Check UPI partner callback logs for this transaction ID",
+        "Check if there is a known UPI/bank downtime notice for the customer's bank"
+      ],
+      "known_resolution": "Trigger a manual status check for the transaction. Most pending UPI transactions auto-resolve within the bank's TAT (typically up to T+1 business day). If finally FAILED, the debited amount is auto-reversed by the bank. Share the RRN with the customer for follow-up with their bank.",
+      "escalation_team": "Payments Operations (L2)",
+      "severity": "P2",
+      "related": ["KB-008", "KB-010"]
+    },
+    {
+      "id": "KB-006",
+      "title": "Card transaction declined",
+      "category": "Payments - Cards",
+      "symptoms": [
+        "Customer's card payment is declined",
+        "Decline response code received from issuer (e.g. 05, 51, 54, 91)",
+        "Multiple customers report declines on the same card network"
+      ],
+      "keywords": ["card declined", "declined", "decline code", "do not honor", "insufficient funds", "expired card", "05", "51", "54", "91"],
+      "possible_causes": [
+        "Issuer decline: insufficient funds (51), expired card (54), do not honor (05)",
+        "Issuer or switch unavailable (91)",
+        "Fraud/risk rule blocking the transaction"
+      ],
+      "diagnostic_checks": [
+        "Get the response code from the transaction details in the admin console",
+        "If a single customer: interpret response code and advise customer to contact their bank",
+        "If many customers on one issuer/network: check decline-rate dashboard by issuer for a spike",
+        "Check whether an internal risk rule flagged the transaction"
+      ],
+      "known_resolution": "Single customer, issuer decline: ask the customer to contact their card issuer or use another payment method. Spike for one issuer with code 91: treat as issuer downtime and inform Payments Operations. Risk rule blocks go to Risk team for review.",
+      "escalation_team": "Payments Operations (L2) / Risk & Fraud team",
+      "severity": "P3",
+      "related": ["KB-007"]
+    },
+    {
+      "id": "KB-007",
+      "title": "3D Secure / OTP authentication failure",
+      "category": "Payments - Cards",
+      "symptoms": [
+        "Customer does not receive OTP for card payment",
+        "3DS page fails to load or shows an error",
+        "Transaction fails with 'Authentication failed'"
+      ],
+      "keywords": ["otp", "3ds", "3d secure", "otp not received", "authentication failed", "acs"],
+      "possible_causes": [
+        "Issuer ACS (Access Control Server) down or slow",
+        "Customer's mobile number not updated with the bank",
+        "Browser blocking the 3DS redirect/iframe"
+      ],
+      "diagnostic_checks": [
+        "Check if failures are concentrated on one issuing bank (ACS issue)",
+        "Check 3DS authentication success-rate dashboard",
+        "Ask the customer to try another browser / disable popup blockers",
+        "Confirm the customer's mobile number is registered with their bank"
+      ],
+      "known_resolution": "If ACS issue for one bank, inform Payments Operations and post a status note. For individual customers, advise retrying, checking registered mobile number with the bank, or using an alternate payment method.",
+      "escalation_team": "Payments Operations (L2)",
+      "severity": "P3",
+      "related": ["KB-006"]
+    },
+    {
+      "id": "KB-008",
+      "title": "Customer charged twice (duplicate debit)",
+      "category": "Payments - Transactions",
+      "symptoms": [
+        "Customer reports two debits for one order",
+        "Two successful transactions with the same amount and order ID",
+        "Duplicate charge after customer clicked Pay twice or retried"
+      ],
+      "keywords": ["double charge", "charged twice", "duplicate", "duplicate debit", "debited twice"],
+      "possible_causes": [
+        "Merchant retried without an idempotency key",
+        "Customer clicked Pay multiple times",
+        "First transaction was pending and later succeeded after customer retried"
+      ],
+      "diagnostic_checks": [
+        "Search transactions by order ID / customer reference to confirm both are SUCCESS (not one PENDING/FAILED)",
+        "Check if both requests carried the same idempotency key",
+        "Check if one of the debits is a pending authorization that will auto-reverse"
+      ],
+      "known_resolution": "If two successful captures exist for one order, initiate a refund for the duplicate transaction (see KB-011 for refund tracking). Advise the merchant to implement idempotency keys.",
+      "escalation_team": "Payments Operations (L2)",
+      "severity": "P2",
+      "related": ["KB-005", "KB-011"]
+    },
+    {
+      "id": "KB-009",
+      "title": "Merchant not receiving payment webhooks / callbacks",
+      "category": "Payments - API",
+      "symptoms": [
+        "Merchant says order status is not updating after payment",
+        "Webhook delivery failures in the dashboard",
+        "Merchant server not receiving callback notifications"
+      ],
+      "keywords": ["webhook", "callback", "notification", "not received", "status not updated"],
+      "possible_causes": [
+        "Merchant webhook URL incorrect or unreachable",
+        "Merchant server returning non-2xx response",
+        "Merchant firewall blocking our IP ranges",
+        "Signature verification failing on merchant side"
+      ],
+      "diagnostic_checks": [
+        "Check webhook delivery logs for the merchant: HTTP status returned and error",
+        "Verify the configured webhook URL (HTTPS, publicly reachable)",
+        "Confirm the merchant has allow-listed the published webhook source IPs",
+        "Ask merchant to check signature verification using the current webhook secret"
+      ],
+      "known_resolution": "Correct the webhook URL or merchant server issue, then replay failed webhooks from the dashboard. Advise merchant to use the status API as a fallback.",
+      "escalation_team": "Merchant Integration Support (L2)",
+      "severity": "P3",
+      "related": ["KB-004"]
+    },
+    {
+      "id": "KB-010",
+      "title": "Merchant settlement delayed",
+      "category": "Payments - Settlement",
+      "symptoms": [
+        "Merchant has not received settlement amount in bank account",
+        "Settlement report shows status ON_HOLD or PENDING",
+        "Settlement amount lower than expected"
+      ],
+      "keywords": ["settlement", "payout", "not received money", "settlement delayed", "on hold", "settlement pending"],
+      "possible_causes": [
+        "Bank holiday / settlement cycle (T+1, T+2) not yet complete",
+        "Settlement on hold due to KYC or risk review",
+        "Incorrect merchant bank account details (payout bounced)",
+        "Deductions: refunds, chargebacks or fees"
+      ],
+      "diagnostic_checks": [
+        "Check the merchant's settlement cycle and whether there was a bank holiday",
+        "Check settlement status and hold reason in the settlement console",
+        "Verify merchant bank account details and any payout bounce/return",
+        "Review settlement report for refunds, chargebacks and fee deductions"
+      ],
+      "known_resolution": "If within cycle, inform the merchant of expected date. If on hold, ask merchant to complete pending KYC/documents. If payout bounced, ask merchant to update bank details and re-trigger payout after verification.",
+      "escalation_team": "Settlements & Reconciliation (L2)",
+      "severity": "P2",
+      "related": ["KB-011", "KB-013"]
+    },
+    {
+      "id": "KB-011",
+      "title": "Refund not reflected in customer account",
+      "category": "Payments - Refunds",
+      "symptoms": [
+        "Customer says refund not received",
+        "Refund shows PROCESSED in dashboard but customer has not got money",
+        "Refund stuck in PENDING"
+      ],
+      "keywords": ["refund", "refund not received", "refund pending", "money back", "reversal"],
+      "possible_causes": [
+        "Refund within bank processing time (typically 5-7 business days for cards)",
+        "Refund failed because card was closed/blocked",
+        "Insufficient merchant balance to process refund"
+      ],
+      "diagnostic_checks": [
+        "Check refund status and ARN/RRN in the admin console",
+        "Check refund date against standard TAT for the payment method",
+        "Check for refund failure reason (closed card, insufficient merchant balance)"
+      ],
+      "known_resolution": "If processed, share the ARN/RRN with the customer so they can trace it with their bank. If failed, re-initiate refund via alternate method (e.g. bank transfer) per policy. If merchant balance is insufficient, ask merchant to top up.",
+      "escalation_team": "Payments Operations (L2)",
+      "severity": "P3",
+      "related": ["KB-008", "KB-010"]
+    },
+    {
+      "id": "KB-012",
+      "title": "Database connection pool exhausted",
+      "category": "Infrastructure - Database",
+      "symptoms": [
+        "Errors like 'too many connections' or 'Cannot acquire connection from pool'",
+        "Application requests hang then fail",
+        "DB active connections at maximum on dashboard"
+      ],
+      "keywords": ["database", "db", "connection pool", "too many connections", "cannot acquire connection", "hikari", "db timeout"],
+      "possible_causes": [
+        "Connection leak in application code (connections not closed)",
+        "Long-running queries holding connections",
+        "Traffic spike beyond pool size"
+      ],
+      "diagnostic_checks": [
+        "Check DB active/idle connections and max_connections",
+        "List long-running queries and blocking sessions on the database",
+        "Check application logs for connection leak warnings",
+        "Correlate with traffic and recent deployments"
+      ],
+      "known_resolution": "Kill confirmed runaway queries (with DBA approval), restart affected application instances to release leaked connections, and raise a ticket to fix the leak or tune pool size.",
+      "escalation_team": "Database Administration (DBA) / Payments Backend (L3)",
+      "severity": "P1",
+      "related": ["KB-001", "KB-020"]
+    },
+    {
+      "id": "KB-013",
+      "title": "Reconciliation mismatch between transactions and settlement",
+      "category": "Payments - Settlement",
+      "symptoms": [
+        "Daily reconciliation report shows mismatched transactions",
+        "Transaction SUCCESS in our system but missing in bank file (or vice versa)",
+        "Settlement total differs from transaction total"
+      ],
+      "keywords": ["reconciliation", "recon", "mismatch", "bank file", "settlement mismatch"],
+      "possible_causes": [
+        "Late status update (pending later turned success/failure)",
+        "Bank MIS file delayed or incomplete",
+        "Timezone/cut-off difference between systems"
+      ],
+      "diagnostic_checks": [
+        "Identify mismatched transaction IDs from the recon report",
+        "Check latest status of each mismatched transaction",
+        "Confirm the bank file for that date was received completely",
+        "Check cut-off times used by both systems"
+      ],
+      "known_resolution": "Re-run reconciliation after receiving the complete bank file. Mark late-status transactions for next-cycle settlement. Remaining unexplained mismatches go to the Settlements team.",
+      "escalation_team": "Settlements & Reconciliation (L2)",
+      "severity": "P2",
+      "related": ["KB-010"]
+    },
+    {
+      "id": "KB-014",
+      "title": "POS terminal offline / not connecting",
+      "category": "POS - Terminal",
+      "symptoms": [
+        "POS terminal shows 'No Network' or 'Host not reachable'",
+        "Terminal status Offline in the terminal management console",
+        "Transactions fail with connection error at the store"
+      ],
+      "keywords": ["pos", "terminal", "offline", "no network", "host not reachable", "edc", "card machine", "machine not working"],
+      "possible_causes": [
+        "SIM/data issue or weak signal",
+        "Store Wi-Fi down or changed password",
+        "Terminal not registered/activated in the management console"
+      ],
+      "diagnostic_checks": [
+        "Check terminal last-seen time in the terminal management console",
+        "Ask merchant to check signal/Wi-Fi icon on the terminal and restart it",
+        "Ask merchant to switch between SIM and Wi-Fi if both are available",
+        "Verify terminal is activated and mapped to the correct merchant ID"
+      ],
+      "known_resolution": "Restart the terminal and reconnect to network. If SIM issue, switch to Wi-Fi or arrange SIM replacement. If not activated, activate and map terminal in console. Still offline after this: raise a field-service visit.",
+      "escalation_team": "POS Field Support",
+      "severity": "P2",
+      "related": ["KB-015", "KB-017"]
+    },
+    {
+      "id": "KB-015",
+      "title": "POS card reader not detecting card (chip / tap / swipe)",
+      "category": "POS - Terminal",
+      "symptoms": [
+        "Terminal shows 'Card read error' or 'Insert card again'",
+        "Tap (contactless) payments not detected",
+        "Chip cards failing but swipe works"
+      ],
+      "keywords": ["card read error", "chip", "tap", "contactless", "swipe", "nfc", "card not detected", "reader"],
+      "possible_causes": [
+        "Dirty or damaged chip reader",
+        "Contactless disabled in terminal configuration",
+        "Customer card damaged"
+      ],
+      "diagnostic_checks": [
+        "Ask merchant to try a different card to rule out a damaged customer card",
+        "Check terminal configuration for contactless enabled",
+        "Ask merchant to clean the chip slot with a cleaning card",
+        "Check terminal hardware error logs in the management console"
+      ],
+      "known_resolution": "Enable contactless in configuration if disabled and push config. If hardware fault persists across multiple cards, arrange terminal replacement.",
+      "escalation_team": "POS Field Support",
+      "severity": "P3",
+      "related": ["KB-014"]
+    },
+    {
+      "id": "KB-016",
+      "title": "POS receipt printer not printing",
+      "category": "POS - Terminal",
+      "symptoms": [
+        "Transaction succeeds but no receipt is printed",
+        "Terminal shows 'Paper out' or 'Printer error'",
+        "Printed receipt is blank"
+      ],
+      "keywords": ["receipt", "printer", "paper", "not printing", "blank receipt", "charge slip"],
+      "possible_causes": [
+        "Paper roll empty or inserted wrong side (thermal side facing in)",
+        "Printer cover not closed properly",
+        "Printer hardware fault"
+      ],
+      "diagnostic_checks": [
+        "Ask merchant to check the paper roll and orientation (thermal side facing out toward print head)",
+        "Ensure the printer cover is fully closed",
+        "Run a test print from terminal settings"
+      ],
+      "known_resolution": "Reload paper correctly. If test print fails with correct paper, arrange terminal repair/replacement. The transaction itself is valid; a duplicate receipt can be reprinted from the terminal's last-transaction menu.",
+      "escalation_team": "POS Field Support",
+      "severity": "P4",
+      "related": ["KB-014"]
+    },
+    {
+      "id": "KB-017",
+      "title": "POS terminal stuck during software update",
+      "category": "POS - Terminal",
+      "symptoms": [
+        "Terminal stuck on 'Updating...' or boot logo",
+        "Terminal restarts repeatedly after update",
+        "Terminal app version not updated"
+      ],
+      "keywords": ["update", "stuck", "firmware", "boot loop", "restarting", "app update", "upgrade"],
+      "possible_causes": [
+        "Network interruption during download",
+        "Low battery during update",
+        "Corrupted update package"
+      ],
+      "diagnostic_checks": [
+        "Check update job status for the terminal in management console",
+        "Ask merchant to connect terminal to charger and stable network",
+        "Check if other terminals on the same update batch report failures"
+      ],
+      "known_resolution": "Keep terminal on charger and stable network, then retry the update from the console. If multiple terminals fail on the same batch, pause the rollout. Boot-looping terminals need replacement or field visit.",
+      "escalation_team": "POS Field Support / Terminal Software team",
+      "severity": "P3",
+      "related": ["KB-014"]
+    },
+    {
+      "id": "KB-018",
+      "title": "Merchant dashboard login failure",
+      "category": "Access - Merchant",
+      "symptoms": [
+        "Merchant cannot log in to the dashboard",
+        "Error: 'Invalid credentials' or 'Account locked'",
+        "Login OTP not received"
+      ],
+      "keywords": ["login", "dashboard", "cannot login", "account locked", "password", "invalid credentials", "merchant portal"],
+      "possible_causes": [
+        "Account locked after multiple failed attempts",
+        "Wrong registered email/mobile",
+        "OTP SMS/email delivery delay"
+      ],
+      "diagnostic_checks": [
+        "Check account status (active/locked) in the admin console",
+        "Verify the registered email/mobile on the account (after identity verification)",
+        "Check OTP delivery logs for the user"
+      ],
+      "known_resolution": "Unlock the account after identity verification, or guide merchant through 'Forgot password'. If OTP not delivered, check delivery logs and retry; update contact details through the verified change process.",
+      "escalation_team": "Merchant Support (L1) / Identity & Access team",
+      "severity": "P3",
+      "related": ["KB-022"]
+    },
+    {
+      "id": "KB-019",
+      "title": "SSL/TLS certificate expired or invalid",
+      "category": "Infrastructure - Security",
+      "symptoms": [
+        "Browser shows 'Your connection is not private' / NET::ERR_CERT_DATE_INVALID",
+        "API clients fail with SSL handshake / certificate verify failed errors",
+        "Sudden failures across all clients at the same time"
+      ],
+      "keywords": ["ssl", "tls", "certificate", "cert expired", "handshake", "certificate verify failed", "https error"],
+      "possible_causes": [
+        "Certificate expired and auto-renewal failed",
+        "Intermediate certificate chain missing",
+        "Wrong certificate deployed for the domain"
+      ],
+      "diagnostic_checks": [
+        "Check certificate expiry date and chain using openssl s_client or an online checker",
+        "Check the auto-renewal job logs (e.g. cert-manager/ACME)",
+        "Verify the certificate's domain names match the requested hostname"
+      ],
+      "known_resolution": "Renew and deploy the certificate with the full chain, then reload the load balancer/web server. Add an expiry alert at 30/7 days.",
+      "escalation_team": "Platform SRE / Security team",
+      "severity": "P1",
+      "related": ["KB-002"]
+    },
+    {
+      "id": "KB-020",
+      "title": "High CPU / memory on application server",
+      "category": "Infrastructure - Compute",
+      "symptoms": [
+        "Monitoring alert: CPU > 90% or memory > 90%",
+        "Application slow or unresponsive",
+        "Pods getting OOMKilled / restarting"
+      ],
+      "keywords": ["cpu", "memory", "high cpu", "oom", "oomkilled", "slow server", "out of memory"],
+      "possible_causes": [
+        "Traffic spike",
+        "Memory leak or inefficient code after deployment",
+        "Runaway background job"
+      ],
+      "diagnostic_checks": [
+        "Check CPU/memory trend and when it started",
+        "Correlate with traffic and recent deployments",
+        "Check top processes / pod resource usage and restart counts",
+        "Check for long-running scheduled/batch jobs"
+      ],
+      "known_resolution": "Scale out if traffic-driven. Roll back if a deployment caused it. Stop runaway jobs. Capture heap/thread dump before restarting for root-cause analysis.",
+      "escalation_team": "Platform SRE",
+      "severity": "P2",
+      "related": ["KB-002", "KB-012", "KB-021"]
+    },
+    {
+      "id": "KB-021",
+      "title": "Server disk space full",
+      "category": "Infrastructure - Compute",
+      "symptoms": [
+        "Error: 'No space left on device'",
+        "Disk usage alert above 90%",
+        "Application fails to write logs or files"
+      ],
+      "keywords": ["disk full", "no space left", "disk space", "storage full", "disk usage"],
+      "possible_causes": [
+        "Log files not rotated",
+        "Old backups / temp files accumulating",
+        "Large core dumps"
+      ],
+      "diagnostic_checks": [
+        "Run df -h to confirm which filesystem is full",
+        "Run du to find the largest directories (often /var/log, /tmp)",
+        "Check log rotation configuration"
+      ],
+      "known_resolution": "Compress or delete old rotated logs and temp files (never delete active DB files). Fix log rotation. Expand disk if usage is legitimately growing.",
+      "escalation_team": "Platform SRE",
+      "severity": "P2",
+      "related": ["KB-020"]
+    },
+    {
+      "id": "KB-022",
+      "title": "Employee password reset / account locked (Active Directory)",
+      "category": "IT Support - Access",
+      "symptoms": [
+        "Employee cannot log in to laptop or email",
+        "Error: 'Your account has been locked'",
+        "Password expired message"
+      ],
+      "keywords": ["password reset", "account locked", "ad", "active directory", "password expired", "forgot password", "employee login"],
+      "possible_causes": [
+        "Multiple failed login attempts (often from an old password saved on phone)",
+        "Password expired per policy",
+        "Account disabled by HR offboarding flag"
+      ],
+      "diagnostic_checks": [
+        "Verify the employee's identity per IT policy",
+        "Check account status in Active Directory (locked, expired, disabled)",
+        "Check lockout source (which device) if repeated lockouts"
+      ],
+      "known_resolution": "Unlock account and/or issue temporary password, require change at next login. For repeated lockouts, ask employee to update the password on phone/mail apps. Disabled accounts go to HR/IAM confirmation.",
+      "escalation_team": "IT Service Desk (L1) / Identity & Access team",
+      "severity": "P3",
+      "related": ["KB-018"]
+    },
+    {
+      "id": "KB-023",
+      "title": "VPN not connecting",
+      "category": "IT Support - Network",
+      "symptoms": [
+        "VPN client shows 'Connection failed' or stays at 'Connecting'",
+        "Authentication error in VPN client",
+        "Connected to VPN but cannot reach internal sites"
+      ],
+      "keywords": ["vpn", "cannot connect", "remote access", "vpn failed", "internal sites", "work from home"],
+      "possible_causes": [
+        "Home internet issue or restrictive network (hotel/public Wi-Fi)",
+        "Expired password or MFA issue",
+        "Outdated VPN client",
+        "DNS/split-tunnel misconfiguration"
+      ],
+      "diagnostic_checks": [
+        "Confirm general internet works (open a public website)",
+        "Check the user's AD password is not expired and MFA works",
+        "Check VPN client version against the supported version",
+        "If connected but no internal access, test internal DNS resolution (nslookup internal host)"
+      ],
+      "known_resolution": "Reset password/MFA if needed, update VPN client, try a different network or mobile hotspot. DNS issues: reconnect, flush DNS; if persistent, escalate to Network team.",
+      "escalation_team": "IT Service Desk (L1) / Network team",
+      "severity": "P3",
+      "related": ["KB-022"]
+    },
+    {
+      "id": "KB-024",
+      "title": "Outlook / email not syncing",
+      "category": "IT Support - Email",
+      "symptoms": [
+        "New emails not arriving in Outlook",
+        "Outlook shows 'Disconnected' or 'Trying to connect'",
+        "Emails stuck in Outbox"
+      ],
+      "keywords": ["outlook", "email", "mail not syncing", "outbox", "disconnected", "not receiving email"],
+      "possible_causes": [
+        "Network/VPN issue",
+        "Mailbox full",
+        "Corrupted Outlook profile or cache"
+      ],
+      "diagnostic_checks": [
+        "Check if webmail (browser) works for the user",
+        "Check mailbox size against quota",
+        "Check Outlook connection status and work-offline mode",
+        "Try creating a new Outlook profile"
+      ],
+      "known_resolution": "Disable Work Offline, clear space if mailbox is full, rebuild Outlook profile/cache. If webmail also fails, check for a service-wide email outage and escalate.",
+      "escalation_team": "IT Service Desk (L1) / Messaging team",
+      "severity": "P4",
+      "related": ["KB-023"]
+    },
+    {
+      "id": "KB-025",
+      "title": "Laptop running slow",
+      "category": "IT Support - Endpoint",
+      "symptoms": [
+        "Laptop very slow to boot or open applications",
+        "Fan constantly running, high CPU",
+        "Frequent freezing"
+      ],
+      "keywords": ["laptop slow", "slow computer", "freezing", "hanging", "pc slow", "high cpu laptop"],
+      "possible_causes": [
+        "Too many startup apps / browser tabs",
+        "Pending OS updates or antivirus scan running",
+        "Low disk space or failing disk"
+      ],
+      "diagnostic_checks": [
+        "Check Task Manager / Activity Monitor for top CPU and memory consumers",
+        "Check free disk space",
+        "Check for pending updates and restart",
+        "Check device health in endpoint management tool"
+      ],
+      "known_resolution": "Restart and install pending updates, close heavy apps, free disk space. If hardware health is poor or issue persists, raise a hardware replacement request.",
+      "escalation_team": "IT Service Desk (L1) / Endpoint team",
+      "severity": "P4",
+      "related": []
+    }
+  ]
+}
